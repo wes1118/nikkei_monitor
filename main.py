@@ -17,6 +17,7 @@ from colorama import Fore, Style
 from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd
 from strategy import generate_signals
 from chart import save_chart
+from notifier import notify
 
 # Windows ターミナルで色を使えるように初期化
 colorama.init()
@@ -152,6 +153,13 @@ def main() -> None:
 
     print("チャートを生成中...")
     save_chart(df, filepath="chart.png")
+
+    latest = df.iloc[-1]
+    notify(
+        signal=latest["signal"],
+        close=latest["close"],
+        cvd=int(latest["cvd"]),
+    )
 
 
 if __name__ == "__main__":
