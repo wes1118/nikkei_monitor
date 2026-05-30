@@ -1,9 +1,8 @@
 """
-main.py - 日経225mini 監視システム（ダミーデータ版）
+main.py - 日経225mini 監視システム
 自動発注機能なし。表示のみ。
 """
 
-import random
 import sys
 
 # Windows PowerShell で日本語を正しく表示するために UTF-8 に切り替える
@@ -14,6 +13,7 @@ from tabulate import tabulate
 import colorama
 from colorama import Fore, Style
 
+from data_source import fetch_ohlcv
 from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd
 from strategy import generate_signals
 from chart import save_chart
@@ -21,50 +21,6 @@ from notifier import notify
 
 # Windows ターミナルで色を使えるように初期化
 colorama.init()
-
-# ──────────────────────────────────────────────
-# ダミーデータ生成
-# ──────────────────────────────────────────────
-
-def create_dummy_data() -> pd.DataFrame:
-    """日経225mini の 5 分足ダミーデータを 20 本生成する。
-
-    実際の取引データに差し替えるときはこの関数を置き換えるだけでOK。
-    """
-    random.seed(42)  # 結果を再現可能にする
-
-    base_price = 38_000  # 日経225mini の基準価格（円）
-    records = []
-    price = base_price
-
-    for i in range(20):
-        timestamp = pd.Timestamp("2024-01-10 09:00") + pd.Timedelta(minutes=5 * i)
-
-        open_ = price
-        # 値動き: -80 〜 +100 円のランダムな変化
-        change = random.randint(-80, 100)
-        close = open_ + change
-
-        # 高値・安値: 実体から少しはみ出させる（ヒゲ）
-        high = max(open_, close) + random.randint(5, 40)
-        low = min(open_, close) - random.randint(5, 40)
-
-        # 出来高: 100〜1000 枚
-        volume = random.randint(100, 1_000)
-
-        records.append(
-            {
-                "datetime": timestamp,
-                "open": open_,
-                "high": high,
-                "low": low,
-                "close": close,
-                "volume": volume,
-            }
-        )
-        price = close  # 次の始値 = 今の終値
-
-    return pd.DataFrame(records)
 
 
 # ──────────────────────────────────────────────
@@ -83,8 +39,13 @@ def _color_signal(signal: str) -> str:
 
 def display_results(df: pd.DataFrame) -> None:
     """計算結果をターミナルに表示する。"""
+    date_range = (
+        f"{df['datetime'].iloc[0].strftime('%Y-%m-%d %H:%M')}"
+        f" 〜 {df['datetime'].iloc[-1].strftime('%H:%M')} JST"
+    )
     print("\n" + "=" * 72)
-    print("  日経225mini 監視システム  【ダミーデータ / 発注機能なし】")
+    print("  日経225mini 監視システム  【Yahoo Finance データ / 発注機能なし】")
+    print(f"  期間: {date_range}")
     print("=" * 72)
 
     # 表示用にコピーして整形
@@ -116,7 +77,7 @@ def display_results(df: pd.DataFrame) -> None:
     print("\n" + "-" * 72)
     print(f"  【最新シグナル】 {_color_signal(latest['signal'])}")
     print(
-        f"  終値: {latest['close']:,} 円  "
+        f"  終値: {latest['close']:,.1f} 円  "
         f"VWAP: {latest['vwap']:,.1f}  "
         f"CVD: {latest['cvd']:+,}  "
         f"出来高: {latest['volume']:,} / 平均: {latest['vol_avg']:,.0f}"
@@ -138,8 +99,8 @@ def display_results(df: pd.DataFrame) -> None:
 # ──────────────────────────────────────────────
 
 def main() -> None:
-    print("データを読み込み中...")
-    df = create_dummy_data()
+    print("市場データを取得中...")
+    df = fetch_ohlcv()
 
     print("インジケーターを計算中...")
     df = calculate_vwap(df)

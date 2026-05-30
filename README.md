@@ -18,12 +18,15 @@ Currently the tool runs on dummy data so you can experiment safely without conne
 
 | Feature | Description |
 |---|---|
+| **Real market data** | Fetches live Nikkei 225 data from Yahoo Finance via `yfinance` (ticker: `^N225`) |
 | **VWAP** | Volume Weighted Average Price — average price weighted by trading volume, resets each session |
 | **CVD** | Cumulative Volume Delta — tracks whether buying or selling pressure is dominant |
 | **Volume Average** | 5-bar moving average of volume, used to confirm signal strength |
 | **BUY / SELL / WAIT signals** | Signals fire only when all three conditions align (price vs VWAP, CVD direction, and above-average volume) |
 | **chart.png generation** | Saves a candlestick chart with VWAP overlay and signal markers to `chart.png` |
 | **Windows notifications** | Pops a desktop toast notification when a BUY or SELL signal is detected |
+
+> **Data source note:** Live Nikkei 225 Mini futures (OSE) are not freely available via public APIs. This project uses the **Nikkei 225 Index** (`^N225`) from Yahoo Finance as a price-accurate proxy. To switch to a futures contract, change `TICKER` in `data_source.py` (e.g. `NIY=F` for CME Nikkei Yen futures).
 
 ### Signal Logic
 
@@ -88,6 +91,7 @@ The program will:
 ```
 nikkei_monitor/
 ├── main.py          # Entry point — orchestrates data flow and display
+├── data_source.py   # Fetches real market data from Yahoo Finance
 ├── indicators.py    # VWAP, Volume Average, and CVD calculations
 ├── strategy.py      # Signal logic (BUY / SELL / WAIT)
 ├── chart.py         # Candlestick chart generation (saves chart.png)
@@ -105,12 +109,12 @@ nikkei_monitor/
 | **v1.0** | Monitoring MVP — terminal output with VWAP, CVD, Volume Average, and signal logic |
 | **v1.1** | Chart output — candlestick chart with VWAP overlay saved as `chart.png` |
 | **v1.2** | Windows notifications — desktop toast alert when BUY or SELL signal fires |
+| **v1.3** | Real market data — replaced dummy data with Yahoo Finance feed via `yfinance` (`data_source.py`) |
 
 ---
 
 ## Future Roadmap
 
-- **Real market data** — Replace dummy data with a live or historical market data feed
 - **LINE Messaging API notifications** — Send signals to your phone via LINE
 - **Backtesting** — Test the signal strategy against historical data to measure accuracy
 - **AI decision engine** — Use a language model to add context-aware commentary on signals
