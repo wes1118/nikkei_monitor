@@ -12,6 +12,7 @@ import colorama
 from colorama import Fore, Style
 
 from data_source import fetch_ohlcv, probe_tickers, TICKER_CANDIDATES
+from session_filter import filter_session, session_label, session_desc, SESSION
 from backtest import (
     prepare_data,
     simulate_trades,
@@ -94,7 +95,7 @@ def run_full_backtest(ticker: str, name: str) -> dict | None:
         print(f"  バー数が少なすぎます（{len(df_raw)} 本 < 最低 {MIN_BARS} 本）。スキップします。")
         return None
 
-    df  = prepare_data(df_raw)
+    df  = prepare_data(df_raw, session=SESSION)
     trades = simulate_trades(df)
     stats  = calc_stats(trades)
 
@@ -140,7 +141,8 @@ def build_comparison_lines(results: list[dict], plain: bool) -> list[str]:
     lines.append(SEP)
     lines.append("  ティッカー比較レポート")
     lines.append(SEP)
-    lines.append(f"  取得期間 : {BACKTEST_PERIOD}（5分足）")
+    lines.append(f"  取得期間   : {BACKTEST_PERIOD}（5分足）")
+    lines.append(f"  セッション : {session_label(SESSION)}  ({session_desc(SESSION)})")
     lines.append(f"  SL={STOP_LOSS}円  TP={TAKE_PROFIT}円  "
                  f"スリッページ={SLIPPAGE}円/片道  取引コスト={TRANSACTION_COST}円  "
                  f"合計コスト={TOTAL_COST}円/トレード")

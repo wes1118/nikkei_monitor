@@ -12,7 +12,8 @@ from tabulate import tabulate
 import colorama
 from colorama import Fore, Style
 
-from data_source import fetch_ohlcv, TICKER   # TICKER は data_source.py で一元管理
+from data_source import fetch_ohlcv, TICKER          # TICKER は data_source.py で一元管理
+from session_filter import filter_session, session_label, session_desc, SESSION  # SESSION は session_filter.py で一元管理
 from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd, calculate_ema, calculate_atr
 from strategy import generate_signals
 
@@ -22,7 +23,8 @@ colorama.init()
 # 設定
 # ──────────────────────────────────────────────
 
-# TICKER は data_source.py で設定（ここでは再定義しない）
+# TICKER  は data_source.py    で設定（ここでは再定義しない）
+# SESSION は session_filter.py で設定（ここでは再定義しない）
 BACKTEST_PERIOD   = "60d"    # yfinance の 5 分足は最大 60 日まで無料取得可能
 BACKTEST_INTERVAL = "5m"
 VOL_WINDOW        = 5
@@ -39,18 +41,27 @@ TOTAL_COST       = 2 * SLIPPAGE + TRANSACTION_COST  # = 40 円 / トレード
 # データ準備
 # ──────────────────────────────────────────────
 
-def prepare_data(df: pd.DataFrame, signal_fn=None) -> pd.DataFrame:
-    """全指標を計算してシグナルを付与する。
+def prepare_data(df: pd.DataFrame, signal_fn=None, session: str = SESSION) -> pd.DataFrame:
+    """セッションフィルターを適用してから全指標を計算し、シグナルを付与する。
 
     引数:
         signal_fn - シグナル生成関数（デフォルト: generate_signals = v1.6）
-                    compare.py から generate_signals_v15 を渡して v1.5 比較に使用する。
+        session   - セッションフィルター（"all_sessions" / "day_session" / "night_session"）
+                    デフォルトは session_filter.py の SESSION 定数
 
     日次リセットするもの: VWAP、CVD、EMA（セッション内の累積値・トレンド）
     通しで計算するもの  : 出来高移動平均、ATR（複数日にわたる統計が意味を持つ）
     """
     if signal_fn is None:
         signal_fn = generate_signals
+
+    # セッションフィルターを最初に適用する
+    df = filter_session(df, session)
+    if df.empty:
+        raise ValueError(
+            f"セッションフィルター後にデータがありません: {session}\n"
+            "  ヒント: ^N225 は日本市場時間のみです。night_session には NIY=F を推奨します。"
+        )
 
     df = df.copy()
     df["_date"] = df["datetime"].dt.date
@@ -251,7 +262,8 @@ def _pf_str(pf: float) -> str:
 # ターミナル出力
 # ──────────────────────────────────────────────
 
-def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
+def print_summary(stats: dict, df: pd.DataFrame, trades: list,
+                  session: str = SESSION) -> None:
     """統計サマリーと直近トレードをターミナルに表示する。"""
     SEP = "=" * 64
 
@@ -261,6 +273,7 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
     print(SEP)
     print(f"  取得期間   : {_period_str(df)}")
     print(f"  総バー数   : {len(df):,} 本")
+    print(f"  セッション : {session_label(session)}  ({session_desc(session)})")
     print()
 
     # シミュレーション設定
@@ -338,7 +351,8 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
 # レポートファイル出力
 # ──────────────────────────────────────────────
 
-def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> None:
+def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str,
+                session: str = SESSION) -> None:
     """全トレード一覧を含む詳細レポートをテキストファイルに保存する。"""
     SEP   = "=" * 64
     lines = []
@@ -349,6 +363,7 @@ def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> N
         SEP,
         f"  取得期間   : {_period_str(df)}",
         f"  総バー数   : {len(df):,} 本",
+        f"  セッション : {session_label(session)}  ({session_desc(session)})",
         "",
         "  ── シミュレーション設定 ──",
         f"  ストップロス          : {STOP_LOSS:>5} 円",
@@ -430,15 +445,16 @@ def main() -> None:
         limit=0,
     )
 
+    print(f"セッションフィルター: {session_label(SESSION)}  ({session_desc(SESSION)})")
     print("インジケーターとシグナルを計算中（日次 VWAP / CVD リセット）...")
-    df = prepare_data(df_raw)
+    df = prepare_data(df_raw, session=SESSION)
 
     print("トレードをシミュレーション中...")
     trades = simulate_trades(df)
 
     stats = calc_stats(trades)
-    print_summary(stats, df, trades)
-    save_report(stats, df, trades, filepath=REPORT_FILE)
+    print_summary(stats, df, trades, session=SESSION)
+    save_report(stats, df, trades, filepath=REPORT_FILE, session=SESSION)
 
 
 if __name__ == "__main__":
