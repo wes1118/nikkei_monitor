@@ -5,6 +5,43 @@ indicators.py - テクニカル指標の計算
 import pandas as pd
 
 
+def calculate_ema(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    """EMA（指数移動平均）を計算する。
+
+    window: EMA の期間（デフォルト 20本 = 5分足なら約100分）
+    終値が EMA より上 → 上昇トレンド、下 → 下降トレンドの判断に使う。
+    min_periods=1 で最初のバーから計算を開始する（ゼロ埋めなし）。
+    """
+    df["ema"] = df["close"].ewm(span=window, adjust=False, min_periods=1).mean()
+    return df
+
+
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+    """ATR（平均真値幅）を計算する。
+
+    True Range = 以下の最大値:
+        high - low
+        |high - 前足の close|
+        |low  - 前足の close|
+    ATR = True Range の period 本移動平均
+
+    ATR が大きい → ボラティリティが高い（動きが大きい）
+    ATR が小さい → ボラティリティが低い（レンジ・膠着）
+    """
+    prev_close = df["close"].shift(1)
+    true_range = pd.concat(
+        [
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"]  - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    df["atr"] = true_range.rolling(window=period, min_periods=1).mean()
+    return df
+
+
 def calculate_vwap(df: pd.DataFrame) -> pd.DataFrame:
     """VWAP（出来高加重平均価格）を計算する。
 

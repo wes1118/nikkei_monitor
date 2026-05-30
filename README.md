@@ -21,8 +21,10 @@ Currently the tool runs on dummy data so you can experiment safely without conne
 | **Real market data** | Fetches live Nikkei 225 data from Yahoo Finance via `yfinance` (ticker: `^N225`) |
 | **VWAP** | Volume Weighted Average Price — average price weighted by trading volume, resets each session |
 | **CVD** | Cumulative Volume Delta — tracks whether buying or selling pressure is dominant |
-| **Volume Average** | 5-bar moving average of volume, used to confirm signal strength |
-| **BUY / SELL / WAIT signals** | Signals fire only when all three conditions align (price vs VWAP, CVD direction, and above-average volume) |
+| **Volume Average** | 5-bar moving average of volume; signal requires volume > average × 1.5 |
+| **EMA trend filter** | 20-bar EMA resets each session; BUY only fires when price is above EMA (uptrend) |
+| **ATR volatility filter** | 14-bar ATR; signals are suppressed when ATR < 30 yen (range/choppy market) |
+| **BUY / SELL / WAIT signals** | All five conditions must align: VWAP, CVD, volume ×1.5, EMA trend, ATR volatility |
 | **chart.png generation** | Saves a candlestick chart with VWAP overlay and signal markers to `chart.png` |
 | **Windows notifications** | Pops a desktop toast notification when a BUY or SELL signal is detected |
 
@@ -90,16 +92,18 @@ The program will:
 
 ```
 nikkei_monitor/
-├── main.py               # Entry point — orchestrates data flow and display
-├── data_source.py        # Fetches real market data from Yahoo Finance
-├── indicators.py         # VWAP, Volume Average, and CVD calculations
-├── strategy.py           # Signal logic (BUY / SELL / WAIT)
-├── chart.py              # Candlestick chart generation (saves chart.png)
-├── notifier.py           # Windows desktop notification
-├── backtest.py           # Backtest simulator (60-day history, saves backtest_report.txt)
-├── requirements.txt      # Python dependencies
-├── chart.png             # Generated chart (created on first run)
-└── backtest_report.txt   # Backtest results (created on first backtest run)
+├── main.py                    # Entry point — orchestrates data flow and display
+├── data_source.py             # Fetches real market data from Yahoo Finance
+├── indicators.py              # VWAP, Volume Average, CVD, EMA, ATR calculations
+├── strategy.py                # Signal logic v1.6 (BUY / SELL / WAIT) + v1.5 for comparison
+├── chart.py                   # Candlestick chart generation (saves chart.png)
+├── notifier.py                # Windows desktop notification
+├── backtest.py                # Backtest simulator (60-day history, saves backtest_report.txt)
+├── compare.py                 # Side-by-side v1.5 vs v1.6 comparison (saves strategy_comparison.txt)
+├── requirements.txt           # Python dependencies
+├── chart.png                  # Generated chart (created on first run)
+├── backtest_report.txt        # Backtest results (created on first backtest run)
+└── strategy_comparison.txt    # Strategy comparison results (created on first compare run)
 ```
 
 ---
@@ -114,6 +118,7 @@ nikkei_monitor/
 | **v1.3** | Real market data — replaced dummy data with Yahoo Finance feed via `yfinance` (`data_source.py`) |
 | **v1.4** | Backtesting — `backtest.py` simulates BUY/SELL signals on 60 days of history and saves `backtest_report.txt` |
 | **v1.5** | Backtest improvements — stop loss, take profit, slippage, transaction cost, max drawdown, average holding bars, win/loss streak statistics |
+| **v1.6** | Signal improvements — EMA trend filter, ATR volatility filter, stronger volume threshold (1.5×); adds `compare.py` for side-by-side strategy comparison (`strategy_comparison.txt`) |
 
 ---
 

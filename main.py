@@ -14,7 +14,7 @@ import colorama
 from colorama import Fore, Style
 
 from data_source import fetch_ohlcv
-from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd
+from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd, calculate_ema, calculate_atr
 from strategy import generate_signals
 from chart import save_chart
 from notifier import notify
@@ -104,8 +104,10 @@ def main() -> None:
 
     print("インジケーターを計算中...")
     df = calculate_vwap(df)
-    df = calculate_volume_avg(df, window=5)   # 5本移動平均
+    df = calculate_volume_avg(df, window=5)
     df = calculate_cvd(df)
+    df = calculate_ema(df, window=20)
+    df = calculate_atr(df, period=14)
 
     print("シグナルを判定中...")
     df = generate_signals(df)

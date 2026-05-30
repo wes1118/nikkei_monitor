@@ -13,7 +13,7 @@ import colorama
 from colorama import Fore, Style
 
 from data_source import fetch_ohlcv
-from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd
+from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd, calculate_ema, calculate_atr
 from strategy import generate_signals
 
 colorama.init()
@@ -39,8 +39,19 @@ TOTAL_COST       = 2 * SLIPPAGE + TRANSACTION_COST  # = 40 円 / トレード
 # データ準備
 # ──────────────────────────────────────────────
 
-def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
-    """VWAP と CVD を日付ごとにリセットして全指標・シグナルを計算する。"""
+def prepare_data(df: pd.DataFrame, signal_fn=None) -> pd.DataFrame:
+    """全指標を計算してシグナルを付与する。
+
+    引数:
+        signal_fn - シグナル生成関数（デフォルト: generate_signals = v1.6）
+                    compare.py から generate_signals_v15 を渡して v1.5 比較に使用する。
+
+    日次リセットするもの: VWAP、CVD、EMA（セッション内の累積値・トレンド）
+    通しで計算するもの  : 出来高移動平均、ATR（複数日にわたる統計が意味を持つ）
+    """
+    if signal_fn is None:
+        signal_fn = generate_signals
+
     df = df.copy()
     df["_date"] = df["datetime"].dt.date
 
@@ -49,11 +60,13 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
         day_df = day_df.copy().reset_index(drop=True)
         day_df = calculate_vwap(day_df)
         day_df = calculate_cvd(day_df)
+        day_df = calculate_ema(day_df, window=20)   # セッションごとにリセット
         day_groups.append(day_df)
 
     result = pd.concat(day_groups).reset_index(drop=True)
     result = calculate_volume_avg(result, window=VOL_WINDOW)
-    result = generate_signals(result)
+    result = calculate_atr(result, period=14)        # 日をまたいで計算
+    result = signal_fn(result)
     return result.drop(columns=["_date"])
 
 
@@ -244,7 +257,7 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
 
     print()
     print(SEP)
-    print(f"  バックテスト結果 v1.5  [ {TICKER} / {BACKTEST_INTERVAL} ]")
+    print(f"  バックテスト結果 v1.6  [ {TICKER} / {BACKTEST_INTERVAL} ]")
     print(SEP)
     print(f"  取得期間   : {_period_str(df)}")
     print(f"  総バー数   : {len(df):,} 本")
@@ -332,7 +345,7 @@ def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> N
 
     lines += [
         SEP,
-        f"  バックテスト結果 v1.5  [ {TICKER} / {BACKTEST_INTERVAL} ]",
+        f"  バックテスト結果 v1.6  [ {TICKER} / {BACKTEST_INTERVAL} ]",
         SEP,
         f"  取得期間   : {_period_str(df)}",
         f"  総バー数   : {len(df):,} 本",
