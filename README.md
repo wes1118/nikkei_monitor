@@ -221,7 +221,34 @@ python optimize.py
 
 > **注意**: 過去データへの最適化です。将来の利益を保証しません。
 > 過学習（カーブフィッティング）のリスクに注意してください。
-> 最良パラメーターを盲目的に採用せず、別の期間でも検証することを推奨します。
+> 最良パラメーターを盲目的に採用せず、`validate.py` で検証することを推奨します。
+
+### アウト・オブ・サンプル検証
+
+```bash
+python validate.py
+```
+
+`optimize.py` で発見した最良パラメーターが、訓練に使っていないデータでも
+同様に機能するかを検証します。
+
+**データ分割（時系列順）:**
+
+```
+┌──────────────────── 訓練期間 70% ────────────────────┬── 検証期間 30% ──┐
+│ optimize.py が使ったデータ（パラメーター探索済み）   │ 今回初めて使用   │
+└──────────────────────────────────────────────────────┴──────────────────┘
+```
+
+**結論の判定基準:**
+
+| 結論 | 条件 |
+|---|---|
+| **Robust（ロバスト）** | 検証 PF ≥ 1.0 かつ損益プラス かつ PF 維持率 ≥ 70% |
+| **Possibly Overfit（過学習の可能性）** | PF ≥ 1.0 かつ損益プラスだが PF 維持率 < 70%、または PF ≥ 0.85 |
+| **Not Robust（非ロバスト）** | 検証 PF < 0.85 または損益が大幅にマイナス |
+
+結果は `validation_report.txt` に保存されます。
 
 ---
 
@@ -241,13 +268,15 @@ nikkei_monitor/
 ├── session_filter.py          # セッションフィルター定義（SESSION 設定・filter_session 関数）
 ├── session_compare.py         # セッション比較（全 / 日中 / 夜間の3セッションを比較）
 ├── optimize.py                # パラメーター最適化（グリッドサーチ、243 通り、~1秒）
+├── validate.py                # アウト・オブ・サンプル検証（訓練 70% / 検証 30% 分割）
 ├── requirements.txt           # 依存パッケージ一覧
 ├── chart.png                  # 生成されたチャート（初回実行後に作成）
 ├── backtest_report.txt        # バックテスト結果（UTF-8 BOM付き）
 ├── strategy_comparison.txt    # 戦略比較結果（UTF-8 BOM付き）
 ├── ticker_comparison.txt      # ティッカー比較結果（UTF-8 BOM付き）
 ├── session_comparison.txt     # セッション比較結果（UTF-8 BOM付き）
-└── optimization_report.txt    # パラメーター最適化レポート（UTF-8 BOM付き）
+├── optimization_report.txt    # パラメーター最適化レポート（UTF-8 BOM付き）
+└── validation_report.txt      # アウト・オブ・サンプル検証レポート（UTF-8 BOM付き）
 ```
 
 ---
@@ -267,6 +296,7 @@ nikkei_monitor/
 | **v1.8** | データソース改善 — `TICKER_CANDIDATES`・`probe_tickers()`・実/合成出来高の自動判定・`ticker_compare.py` で先物 vs インデックス比較 |
 | **v1.9** | セッションフィルター — `session_filter.py` で日中 / 夜間 / 全セッション切替・`session_compare.py` で3セッション比較 |
 | **v1.10** | パラメーター最適化 — `optimize.py` で 243 通りのグリッドサーチ（~1秒）・PF 優先でランク付け・`optimization_report.txt` に上位 20 件を保存 |
+| **v1.11** | アウト・オブ・サンプル検証 — `validate.py` で訓練 70% / 検証 30% 分割・Robust / Possibly Overfit / Not Robust の判定・`validation_report.txt` に保存 |
 
 ---
 
