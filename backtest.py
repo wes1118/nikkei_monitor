@@ -411,7 +411,7 @@ def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> N
         SEP,
     ]
 
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8-sig") as f:  # BOM付きでWindows Notepadでも文字化けしない
         f.write("\n".join(lines))
 
     print(f"レポートを保存しました → {filepath}")

@@ -1,141 +1,186 @@
-# Nikkei Monitor
+# 日経Monitor (Nikkei Monitor)
 
-A beginner-friendly monitoring tool for Nikkei 225 Mini futures that calculates technical indicators and generates BUY / SELL / WAIT signals.
+日経225miniをリアルタイムで監視する Python 学習プロジェクトです。
+VWAP・CVD などのテクニカル指標でシグナルを生成し、チャートと Windows 通知で結果を確認できます。
 
-> **Important:** This project does **NOT** perform automatic trading or order execution. It is a display-only tool for learning and observation purposes.
-
----
-
-## Project Overview
-
-Nikkei Monitor reads candlestick (OHLCV) data, computes three technical indicators — VWAP, CVD, and Volume Average — and uses them together to produce simple signals. Results are printed to the terminal in a color-coded table, saved as a chart image (`chart.png`), and sent as a Windows desktop notification.
-
-Currently the tool runs on dummy data so you can experiment safely without connecting to a live market feed.
+> ⚠️ **重要**: このプロジェクトは **自動売買・自動発注機能を持ちません**。表示・分析専用です。
 
 ---
 
-## Current Features
+## 概要
 
-| Feature | Description |
-|---|---|
-| **Real market data** | Fetches live Nikkei 225 data from Yahoo Finance via `yfinance` (ticker: `^N225`) |
-| **VWAP** | Volume Weighted Average Price — average price weighted by trading volume, resets each session |
-| **CVD** | Cumulative Volume Delta — tracks whether buying or selling pressure is dominant |
-| **Volume Average** | 5-bar moving average of volume; signal requires volume > average × 1.5 |
-| **EMA trend filter** | 20-bar EMA resets each session; BUY only fires when price is above EMA (uptrend) |
-| **ATR volatility filter** | 14-bar ATR; signals are suppressed when ATR < 30 yen (range/choppy market) |
-| **BUY / SELL / WAIT signals** | All five conditions must align: VWAP, CVD, volume ×1.5, EMA trend, ATR volatility |
-| **chart.png generation** | Saves a candlestick chart with VWAP overlay and signal markers to `chart.png` |
-| **Windows notifications** | Pops a desktop toast notification when a BUY or SELL signal is detected |
+Yahoo Finance から取得した5分足データをもとに、複数のテクニカル指標を計算して BUY / SELL / WAIT シグナルを生成します。
 
-> **Data source note:** Live Nikkei 225 Mini futures (OSE) are not freely available via public APIs. This project uses the **Nikkei 225 Index** (`^N225`) from Yahoo Finance as a price-accurate proxy. To switch to a futures contract, change `TICKER` in `data_source.py` (e.g. `NIY=F` for CME Nikkei Yen futures).
-
-### Signal Logic
-
-| Signal | Conditions |
-|---|---|
-| **BUY** | Close > VWAP AND CVD > 0 AND Volume > Volume Average |
-| **SELL** | Close < VWAP AND CVD < 0 AND Volume > Volume Average |
-| **WAIT** | Any other condition |
+- ダミーデータは使いません（Yahoo Finance のリアルデータを使用）
+- バックテストで過去 60 日間の戦略を検証できます
+- チャート画像の出力と Windows デスクトップ通知をサポートしています
 
 ---
 
-## Installation
+## 主な機能
 
-### Requirements
+| 機能 | 説明 |
+|------|------|
+| **リアルデータ取得** | Yahoo Finance から `^N225`（日経225指数）を取得 |
+| **VWAP** | 出来高加重平均価格。セッションごとにリセット |
+| **CVD** | 累積出来高デルタ。買い/売り圧力の累積変化を追跡 |
+| **出来高フィルター** | 5本移動平均の 1.5 倍超の出来高がある場合のみシグナル有効 |
+| **EMA トレンドフィルター** | EMA(20) より上なら上昇トレンドとみなし BUY を許可 |
+| **ATR ボラティリティフィルター** | ATR(14) が低いレンジ相場ではシグナルを出さない（閾値: 30円） |
+| **BUY / SELL / WAIT シグナル** | 5条件すべて揃った場合のみシグナル発生（誤シグナルを削減） |
+| **チャート出力** | `chart.png` にローソク足・VWAP・シグナルマーカーを保存 |
+| **Windows 通知** | BUY / SELL シグナル発生時にデスクトップ通知 |
+| **バックテスト** | SL・TP・スリッページ・取引コスト対応の詳細バックテスト |
+| **戦略比較** | v1.5（3条件）と v1.6（5条件）のバックテスト結果を並べて比較 |
 
-- Python 3.10 or later
-- Windows OS (for desktop notifications)
-
-### Steps
-
-1. **Clone the repository**
-
-   ```bash
-   git clone https://github.com/wesbass1118/nikkei_monitor.git
-   cd nikkei_monitor
-   ```
-
-2. **Create a virtual environment (recommended)**
-
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
+> **データソースについて**: 日経225mini 先物（OSE 上場）の出来高データは無料 API では取得困難なため、
+> `^N225`（日経225指数）を代替として使用しています。
+> 出来高は「価格レンジ × 10」で近似（開発用）。
+> 実際の先物データ（`NIY=F` など）に切り替えるには `data_source.py` の `TICKER` を変更してください。
 
 ---
 
-## How to Run
+## シグナル判定ロジック（v1.6）
+
+| シグナル | 条件（5つすべて必要） |
+|----------|----------------------|
+| **BUY（買い）** | 終値 > VWAP &nbsp;&amp;&amp;&nbsp; CVD > 0 &nbsp;&amp;&amp;&nbsp; 出来高 > 移動平均×1.5 &nbsp;&amp;&amp;&nbsp; 終値 > EMA &nbsp;&amp;&amp;&nbsp; ATR ≥ 30円 |
+| **SELL（売り）** | 終値 < VWAP &nbsp;&amp;&amp;&nbsp; CVD < 0 &nbsp;&amp;&amp;&nbsp; 出来高 > 移動平均×1.5 &nbsp;&amp;&amp;&nbsp; 終値 < EMA &nbsp;&amp;&amp;&nbsp; ATR ≥ 30円 |
+| **WAIT（見送り）** | 上記以外 |
+
+---
+
+## セットアップ
+
+### 動作環境
+
+- Python 3.10 以上
+- Windows OS（デスクトップ通知機能に必要）
+
+### インストール手順
+
+**1. リポジトリをクローン**
+
+```bash
+git clone https://github.com/wes1118/nikkei_monitor.git
+cd nikkei_monitor
+```
+
+**2. 仮想環境を作成（推奨）**
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+**3. 依存パッケージをインストール**
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## 使い方
+
+### リアルタイム監視
 
 ```bash
 python main.py
 ```
 
-The program will:
+実行すると以下の順で処理されます:
 
-1. Generate dummy candlestick data (20 bars of 5-minute Nikkei 225 Mini data)
-2. Calculate VWAP, Volume Average, and CVD
-3. Determine BUY / SELL / WAIT signals for each bar
-4. Print a color-coded results table to the terminal
-5. Save `chart.png` in the project folder
-6. Send a Windows desktop notification for the latest signal
+1. Yahoo Finance から最新の5分足データを取得（最大 40 本）
+2. VWAP・出来高移動平均・CVD・EMA・ATR を計算
+3. BUY / SELL / WAIT シグナルを判定
+4. ターミナルにカラー表示
+5. `chart.png` を保存
+6. BUY または SELL シグナルの場合、Windows デスクトップ通知
+
+### バックテスト
+
+```bash
+python backtest.py
+```
+
+過去 60 日間のデータでシグナル戦略をシミュレーションします。
+ストップロス（SL）・テイクプロフィット（TP）・スリッページ・取引コストを考慮した詳細な分析が可能です。
+結果は `backtest_report.txt` に保存されます。
+
+**デフォルト設定:**
+
+| 項目 | 設定値 |
+|------|--------|
+| ストップロス | 150 円 |
+| テイクプロフィット | 300 円 |
+| スリッページ | 10 円 / 片道 |
+| 取引コスト | 20 円 / トレード |
+| 合計コスト（往復） | 40 円 / トレード |
+
+### 戦略比較
+
+```bash
+python compare.py
+```
+
+v1.5（3条件）と v1.6（5条件）のバックテスト結果を同じ期間・設定で比較します。
+結果は `strategy_comparison.txt` に保存されます。
 
 ---
 
-## Project Structure
+## ファイル構成
 
 ```
 nikkei_monitor/
-├── main.py                    # Entry point — orchestrates data flow and display
-├── data_source.py             # Fetches real market data from Yahoo Finance
-├── indicators.py              # VWAP, Volume Average, CVD, EMA, ATR calculations
-├── strategy.py                # Signal logic v1.6 (BUY / SELL / WAIT) + v1.5 for comparison
-├── chart.py                   # Candlestick chart generation (saves chart.png)
-├── notifier.py                # Windows desktop notification
-├── backtest.py                # Backtest simulator (60-day history, saves backtest_report.txt)
-├── compare.py                 # Side-by-side v1.5 vs v1.6 comparison (saves strategy_comparison.txt)
-├── requirements.txt           # Python dependencies
-├── chart.png                  # Generated chart (created on first run)
-├── backtest_report.txt        # Backtest results (created on first backtest run)
-└── strategy_comparison.txt    # Strategy comparison results (created on first compare run)
+├── main.py                    # メインスクリプト（監視・表示）
+├── data_source.py             # Yahoo Finance からデータ取得
+├── indicators.py              # テクニカル指標の計算（VWAP / CVD / EMA / ATR）
+├── strategy.py                # シグナル判定ロジック（v1.6 現行版 + v1.5 比較用）
+├── chart.py                   # チャート生成（日本語フォント対応 / 英語フォールバック）
+├── notifier.py                # Windows デスクトップ通知
+├── backtest.py                # バックテスト（SL / TP / コスト対応）
+├── compare.py                 # 戦略比較（v1.5 vs v1.6）
+├── requirements.txt           # 依存パッケージ一覧
+├── chart.png                  # 生成されたチャート（初回実行後に作成）
+├── backtest_report.txt        # バックテスト結果（UTF-8 BOM付き）
+└── strategy_comparison.txt    # 戦略比較結果（UTF-8 BOM付き）
 ```
 
 ---
 
-## Version History
+## バージョン履歴
 
-| Version | Description |
-|---|---|
-| **v1.0** | Monitoring MVP — terminal output with VWAP, CVD, Volume Average, and signal logic |
-| **v1.1** | Chart output — candlestick chart with VWAP overlay saved as `chart.png` |
-| **v1.2** | Windows notifications — desktop toast alert when BUY or SELL signal fires |
-| **v1.3** | Real market data — replaced dummy data with Yahoo Finance feed via `yfinance` (`data_source.py`) |
-| **v1.4** | Backtesting — `backtest.py` simulates BUY/SELL signals on 60 days of history and saves `backtest_report.txt` |
-| **v1.5** | Backtest improvements — stop loss, take profit, slippage, transaction cost, max drawdown, average holding bars, win/loss streak statistics |
-| **v1.6** | Signal improvements — EMA trend filter, ATR volatility filter, stronger volume threshold (1.5×); adds `compare.py` for side-by-side strategy comparison (`strategy_comparison.txt`) |
-
----
-
-## Future Roadmap
-
-- **LINE Messaging API notifications** — Send signals to your phone via LINE
-- **AI decision engine** — Use a language model to add context-aware commentary on signals
+| バージョン | 内容 |
+|-----------|------|
+| **v1.0** | MVP — ターミナル表示・VWAP / CVD / 出来高移動平均・シグナル判定 |
+| **v1.1** | チャート出力 — `chart.png` 生成 |
+| **v1.2** | Windows 通知 — BUY / SELL 時にデスクトップ通知 |
+| **v1.3** | リアルデータ — Yahoo Finance（`yfinance`）からデータ取得 |
+| **v1.4** | バックテスト — `backtest.py` で 60 日間の過去データを検証 |
+| **v1.5** | バックテスト強化 — SL / TP / スリッページ / 取引コスト / 最大ドローダウン / 連勝連敗 |
+| **v1.6** | シグナル改善 — EMA トレンドフィルター・ATR ボラティリティフィルター・出来高 1.5 倍・戦略比較スクリプト |
+| **v1.7** | 日本語対応強化 — チャートの日本語フォント自動検出・README 日本語化・レポートファイル BOM 対応 |
 
 ---
 
-## Dependencies
+## 今後の予定（ロードマップ）
+
+- **LINE Messaging API 通知** — スマートフォンに LINE でシグナルを通知
+- **AI 判断エンジン** — 言語モデルによるシグナルへのコメント・解説生成
+
+---
+
+## 依存パッケージ
 
 ```
 pandas
 tabulate
 colorama
 matplotlib
+yfinance
 ```
 
-Install all at once with `pip install -r requirements.txt`.
+```bash
+pip install -r requirements.txt
+```

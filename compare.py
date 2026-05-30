@@ -215,7 +215,7 @@ def save_comparison(s15: dict, s16: dict, df_raw, filepath: str) -> None:
         SEP,
     ]
 
-    with open(filepath, "w", encoding="utf-8") as f:
+    with open(filepath, "w", encoding="utf-8-sig") as f:  # BOM付きでWindows Notepadでも文字化けしない
         f.write("\n".join(lines))
 
     print(f"比較レポートを保存しました → {filepath}")
