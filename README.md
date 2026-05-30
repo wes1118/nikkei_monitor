@@ -90,14 +90,16 @@ The program will:
 
 ```
 nikkei_monitor/
-├── main.py          # Entry point — orchestrates data flow and display
-├── data_source.py   # Fetches real market data from Yahoo Finance
-├── indicators.py    # VWAP, Volume Average, and CVD calculations
-├── strategy.py      # Signal logic (BUY / SELL / WAIT)
-├── chart.py         # Candlestick chart generation (saves chart.png)
-├── notifier.py      # Windows desktop notification
-├── requirements.txt # Python dependencies
-└── chart.png        # Generated chart (created on first run)
+├── main.py               # Entry point — orchestrates data flow and display
+├── data_source.py        # Fetches real market data from Yahoo Finance
+├── indicators.py         # VWAP, Volume Average, and CVD calculations
+├── strategy.py           # Signal logic (BUY / SELL / WAIT)
+├── chart.py              # Candlestick chart generation (saves chart.png)
+├── notifier.py           # Windows desktop notification
+├── backtest.py           # Backtest simulator (60-day history, saves backtest_report.txt)
+├── requirements.txt      # Python dependencies
+├── chart.png             # Generated chart (created on first run)
+└── backtest_report.txt   # Backtest results (created on first backtest run)
 ```
 
 ---
@@ -110,13 +112,13 @@ nikkei_monitor/
 | **v1.1** | Chart output — candlestick chart with VWAP overlay saved as `chart.png` |
 | **v1.2** | Windows notifications — desktop toast alert when BUY or SELL signal fires |
 | **v1.3** | Real market data — replaced dummy data with Yahoo Finance feed via `yfinance` (`data_source.py`) |
+| **v1.4** | Backtesting — `backtest.py` simulates BUY/SELL signals on 60 days of history and saves `backtest_report.txt` |
 
 ---
 
 ## Future Roadmap
 
 - **LINE Messaging API notifications** — Send signals to your phone via LINE
-- **Backtesting** — Test the signal strategy against historical data to measure accuracy
 - **AI decision engine** — Use a language model to add context-aware commentary on signals
 
 ---
