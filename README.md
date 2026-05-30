@@ -113,6 +113,7 @@ nikkei_monitor/
 | **v1.2** | Windows notifications — desktop toast alert when BUY or SELL signal fires |
 | **v1.3** | Real market data — replaced dummy data with Yahoo Finance feed via `yfinance` (`data_source.py`) |
 | **v1.4** | Backtesting — `backtest.py` simulates BUY/SELL signals on 60 days of history and saves `backtest_report.txt` |
+| **v1.5** | Backtest improvements — stop loss, take profit, slippage, transaction cost, max drawdown, average holding bars, win/loss streak statistics |
 
 ---
 

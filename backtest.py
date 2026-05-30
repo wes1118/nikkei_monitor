@@ -1,5 +1,5 @@
 """
-backtest.py - シンプルバックテスト
+backtest.py - シンプルバックテスト v1.5
 過去データに BUY/SELL シグナルを適用して損益をシミュレーションする。
 自動発注機能なし。分析のみ。
 """
@@ -18,24 +18,29 @@ from strategy import generate_signals
 
 colorama.init()
 
+# ──────────────────────────────────────────────
+# 設定
+# ──────────────────────────────────────────────
+
 TICKER            = "^N225"
 BACKTEST_PERIOD   = "60d"    # yfinance の 5 分足は最大 60 日まで無料取得可能
 BACKTEST_INTERVAL = "5m"
-VOL_WINDOW        = 5        # 出来高移動平均の期間（main.py と合わせる）
+VOL_WINDOW        = 5
 REPORT_FILE       = "backtest_report.txt"
+
+STOP_LOSS        = 150   # 円: エントリー価格からの損切り幅
+TAKE_PROFIT      = 300   # 円: エントリー価格からの利確幅
+SLIPPAGE         = 10    # 円: 1 回あたりのスリッページ（エントリー・エグジット各 1 回）
+TRANSACTION_COST = 20    # 円: 1 トレード（往復）あたりの取引コスト
+TOTAL_COST       = 2 * SLIPPAGE + TRANSACTION_COST  # = 40 円 / トレード
 
 
 # ──────────────────────────────────────────────
-# データ準備（インジケーター計算）
+# データ準備
 # ──────────────────────────────────────────────
 
 def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
-    """VWAP と CVD を日付ごとにリセットしてから全インジケーターとシグナルを計算する。
-
-    VWAP と CVD はセッション内で累積するインジケーターのため、
-    日をまたいで計算すると初日の値が後続日に引きずられ不正確になる。
-    そのため日付ごとにグループ化して個別に計算し直す。
-    """
+    """VWAP と CVD を日付ごとにリセットして全指標・シグナルを計算する。"""
     df = df.copy()
     df["_date"] = df["datetime"].dt.date
 
@@ -47,11 +52,8 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
         day_groups.append(day_df)
 
     result = pd.concat(day_groups).reset_index(drop=True)
-
-    # 出来高移動平均は日をまたいでも自然なローリング計算でよい
     result = calculate_volume_avg(result, window=VOL_WINDOW)
     result = generate_signals(result)
-
     return result.drop(columns=["_date"])
 
 
@@ -59,50 +61,67 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
 # トレードシミュレーション
 # ──────────────────────────────────────────────
 
+def _record(trades: list, pos: dict, exit_price: float,
+            reason: str, exit_bar: int, exit_time) -> None:
+    """計算済みの決済情報をトレードリストに追記する。"""
+    pnl = (exit_price - pos["entry_price"]) - TOTAL_COST
+    trades.append({
+        "entry_time":   pos["entry_time"],
+        "exit_time":    exit_time,
+        "entry_price":  pos["entry_price"],
+        "exit_price":   exit_price,
+        "pnl":          pnl,
+        "exit_reason":  reason,
+        "holding_bars": exit_bar - pos["entry_bar"],
+        "result":       "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "DRAW"),
+    })
+
+
 def simulate_trades(df: pd.DataFrame) -> list:
-    """BUY シグナルでエントリー、SELL シグナルでエグジットするロング専用シミュレーション。
+    """BUY シグナルでロングエントリーし、以下の優先順で決済するシミュレーション。
 
-    ルール:
-        - ポジションなし + BUY シグナル → その終値でロングエントリー
-        - ポジションあり + SELL シグナル → その終値でエグジット
-        - ポジションなし + SELL シグナル → 無視（空売りなし）
-        - データ末尾までポジションが残った場合 → 最終バーの終値で強制決済
+    決済優先順位（同バー内で複数条件が重なった場合）:
+      1. ストップロス (SL): bar の安値が (エントリー価格 - SL幅) を下回った
+      2. テイクプロフィット (TP): bar の高値が (エントリー価格 + TP幅) を上回った
+      3. シグナル決済: SELL シグナルが出た
+    期末に未決済のポジションは最終バーの終値で強制決済する。
+
+    損益の計算式:
+        P&L = (出口価格 - 入口価格) - SLIPPAGE×2 - TRANSACTION_COST
+            = (出口価格 - 入口価格) - 40 円
+
+    ※ SL を優先することで、SL と TP が同時に触れた最悪ケースを想定している（保守的）。
     """
-    trades = []
-    position = None  # None = フラット、dict = ポジション保有中
+    trades   = []
+    position = None  # None = フラット
 
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
+        # ── エントリー ──────────────────────────
         if position is None and row["signal"] == "買い":
             position = {
                 "entry_time":  row["datetime"],
+                "entry_bar":   idx,
                 "entry_price": row["close"],
+                "sl_level":    row["close"] - STOP_LOSS,
+                "tp_level":    row["close"] + TAKE_PROFIT,
             }
-        elif position is not None and row["signal"] == "売り":
-            pnl = row["close"] - position["entry_price"]
-            trades.append({
-                "entry_time":  position["entry_time"],
-                "exit_time":   row["datetime"],
-                "entry_price": position["entry_price"],
-                "exit_price":  row["close"],
-                "pnl":         pnl,
-                "forced":      False,
-                "result":      "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "DRAW"),
-            })
-            position = None
 
-    # データ末尾にポジションが残っていれば強制クローズ
+        # ── 決済チェック（エントリーバーは除く）──
+        elif position is not None:
+            if row["low"] <= position["sl_level"]:
+                _record(trades, position, position["sl_level"], "SL", idx, row["datetime"])
+                position = None
+            elif row["high"] >= position["tp_level"]:
+                _record(trades, position, position["tp_level"], "TP", idx, row["datetime"])
+                position = None
+            elif row["signal"] == "売り":
+                _record(trades, position, row["close"], "SIGNAL", idx, row["datetime"])
+                position = None
+
+    # 期末強制決済
     if position is not None:
         last = df.iloc[-1]
-        pnl = last["close"] - position["entry_price"]
-        trades.append({
-            "entry_time":  position["entry_time"],
-            "exit_time":   last["datetime"],
-            "entry_price": position["entry_price"],
-            "exit_price":  last["close"],
-            "pnl":         pnl,
-            "forced":      True,
-            "result":      "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "DRAW"),
-        })
+        _record(trades, position, last["close"], "FORCED", df.index[-1], last["datetime"])
 
     return trades
 
@@ -112,30 +131,65 @@ def simulate_trades(df: pd.DataFrame) -> list:
 # ──────────────────────────────────────────────
 
 def calc_stats(trades: list) -> dict:
-    """勝率・損益などの統計指標を計算する。"""
+    """勝率・損益・ドローダウン・連勝連敗などを計算する。"""
     if not trades:
         return {}
 
-    pnl_list     = [t["pnl"] for t in trades]
-    wins         = sum(1 for t in trades if t["result"] == "WIN")
-    losses       = sum(1 for t in trades if t["result"] == "LOSS")
-    draws        = len(trades) - wins - losses
+    pnl_list = [t["pnl"] for t in trades]
+    results  = [t["result"] for t in trades]
+    wins     = results.count("WIN")
+    losses   = results.count("LOSS")
+    draws    = results.count("DRAW")
+
     gross_profit = sum(p for p in pnl_list if p > 0)
     gross_loss   = abs(sum(p for p in pnl_list if p < 0))
 
+    # 最大ドローダウン（累積損益の峰から谷への最大落差）
+    cumulative = 0
+    peak       = 0
+    max_dd     = 0
+    for p in pnl_list:
+        cumulative += p
+        if cumulative > peak:
+            peak = cumulative
+        dd = cumulative - peak
+        if dd < max_dd:
+            max_dd = dd
+
+    # 連勝・連敗
+    max_win_streak  = cur_win  = 0
+    max_loss_streak = cur_loss = 0
+    for r in results:
+        if r == "WIN":
+            cur_win  += 1;  cur_loss  = 0
+            max_win_streak  = max(max_win_streak,  cur_win)
+        elif r == "LOSS":
+            cur_loss += 1;  cur_win   = 0
+            max_loss_streak = max(max_loss_streak, cur_loss)
+        else:
+            cur_win = cur_loss = 0
+
     return {
-        "total_trades":  len(trades),
-        "wins":          wins,
-        "losses":        losses,
-        "draws":         draws,
-        "win_rate":      wins / len(trades) * 100,
-        "total_pnl":     sum(pnl_list),
-        "avg_pnl":       sum(pnl_list) / len(trades),
-        "max_win":       max(pnl_list),
-        "max_loss":      min(pnl_list),
-        "gross_profit":  gross_profit,
-        "gross_loss":    gross_loss,
-        "profit_factor": gross_profit / gross_loss if gross_loss > 0 else float("inf"),
+        "total_trades":    len(trades),
+        "wins":            wins,
+        "losses":          losses,
+        "draws":           draws,
+        "win_rate":        wins / len(trades) * 100,
+        "total_pnl":       sum(pnl_list),
+        "avg_pnl":         sum(pnl_list) / len(trades),
+        "max_win":         max(pnl_list),
+        "max_loss":        min(pnl_list),
+        "gross_profit":    gross_profit,
+        "gross_loss":      gross_loss,
+        "profit_factor":   gross_profit / gross_loss if gross_loss > 0 else float("inf"),
+        "max_drawdown":    max_dd,
+        "avg_hold_bars":   sum(t["holding_bars"] for t in trades) / len(trades),
+        "max_win_streak":  max_win_streak,
+        "max_loss_streak": max_loss_streak,
+        "sl_count":        sum(1 for t in trades if t["exit_reason"] == "SL"),
+        "tp_count":        sum(1 for t in trades if t["exit_reason"] == "TP"),
+        "signal_count":    sum(1 for t in trades if t["exit_reason"] == "SIGNAL"),
+        "forced_count":    sum(1 for t in trades if t["exit_reason"] == "FORCED"),
     }
 
 
@@ -143,26 +197,30 @@ def calc_stats(trades: list) -> dict:
 # 表示ヘルパー
 # ──────────────────────────────────────────────
 
+_EXIT_LABEL = {"SL": "SL", "TP": "TP", "SIGNAL": "シグナル", "FORCED": "強制*"}
+
+TRADE_HEADERS = [
+    "No", "エントリー", "エグジット",
+    "始値(円)", "終値(円)", "損益(円)", "保有本", "決済", "結果",
+]
+
+
 def _trade_rows(trades: list) -> list:
-    """tabulate 用のトレード行リストを生成する（色なし・整列崩れ防止）。"""
+    """tabulate 用の行リストを生成する（ANSI なし・整列崩れ防止）。"""
     rows = []
     for i, t in enumerate(trades, 1):
-        exit_label = f"{t['exit_time'].strftime('%m/%d %H:%M')}"
-        if t["forced"]:
-            exit_label += "*"   # 強制決済マーク
         rows.append([
             i,
             t["entry_time"].strftime("%m/%d %H:%M"),
-            exit_label,
+            t["exit_time"].strftime("%m/%d %H:%M"),
             f"{t['entry_price']:>10,.1f}",
             f"{t['exit_price']:>10,.1f}",
             f"{t['pnl']:>+10,.1f}",
+            t["holding_bars"],
+            _EXIT_LABEL.get(t["exit_reason"], t["exit_reason"]),
             t["result"],
         ])
     return rows
-
-
-TRADE_HEADERS = ["No", "エントリー", "エグジット", "始値(円)", "終値(円)", "損益(円)", "結果"]
 
 
 def _period_str(df: pd.DataFrame) -> str:
@@ -172,20 +230,33 @@ def _period_str(df: pd.DataFrame) -> str:
     )
 
 
+def _pf_str(pf: float) -> str:
+    return f"{pf:.2f}" if pf != float("inf") else "∞"
+
+
 # ──────────────────────────────────────────────
 # ターミナル出力
 # ──────────────────────────────────────────────
 
 def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
     """統計サマリーと直近トレードをターミナルに表示する。"""
-    SEP = "=" * 62
+    SEP = "=" * 64
 
     print()
     print(SEP)
-    print(f"  バックテスト結果  [ {TICKER} / {BACKTEST_INTERVAL} ]")
+    print(f"  バックテスト結果 v1.5  [ {TICKER} / {BACKTEST_INTERVAL} ]")
     print(SEP)
     print(f"  取得期間   : {_period_str(df)}")
     print(f"  総バー数   : {len(df):,} 本")
+    print()
+
+    # シミュレーション設定
+    print("  ── シミュレーション設定 ──")
+    print(f"  ストップロス          : {STOP_LOSS:>5} 円 (エントリー価格 −{STOP_LOSS}円で損切り)")
+    print(f"  テイクプロフィット    : {TAKE_PROFIT:>5} 円 (エントリー価格 +{TAKE_PROFIT}円で利確)")
+    print(f"  スリッページ          : {SLIPPAGE:>5} 円 / 片道（エントリー・エグジット各1回）")
+    print(f"  取引コスト            : {TRANSACTION_COST:>5} 円 / トレード")
+    print(f"  合計コスト（往復）    : {TOTAL_COST:>5} 円 / トレード")
     print()
 
     if not stats:
@@ -193,32 +264,46 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
         print(SEP)
         return
 
-    # 勝敗サマリー
+    # 勝敗
+    print("  ── 勝敗 ──")
     print(f"  総トレード数       : {stats['total_trades']:>4} 回")
     print(f"  勝ち               : {Fore.GREEN}{stats['wins']:>4} 回{Style.RESET_ALL}")
     print(f"  負け               : {Fore.RED}{stats['losses']:>4} 回{Style.RESET_ALL}")
     print(f"  引き分け           : {stats['draws']:>4} 回")
     print(f"  勝率               : {stats['win_rate']:>6.1f} %")
+    print(f"  最大連勝           : {stats['max_win_streak']:>4} 連勝")
+    print(f"  最大連敗           : {stats['max_loss_streak']:>4} 連敗")
     print()
 
-    # 損益サマリー
+    # 損益
     pnl_color = Fore.GREEN if stats["total_pnl"] >= 0 else Fore.RED
-    pf_val    = stats["profit_factor"]
-    pf_str    = f"{pf_val:.2f}" if pf_val != float("inf") else "∞"
-    pf_color  = Fore.GREEN if pf_val >= 1.0 else Fore.RED
+    pf        = stats["profit_factor"]
+    pf_color  = Fore.GREEN if pf >= 1.0 else Fore.RED
 
+    print("  ── 損益 ──")
     print(f"  合計損益           : {pnl_color}{stats['total_pnl']:>+10,.1f} 円{Style.RESET_ALL}")
-    print(f"  平均損益 / トレード: {stats['avg_pnl']:>+10,.1f} 円")
+    print(f"  平均損益/トレード  : {stats['avg_pnl']:>+10,.1f} 円")
     print(f"  最大利益           : {Fore.GREEN}{stats['max_win']:>+10,.1f} 円{Style.RESET_ALL}")
     print(f"  最大損失           : {Fore.RED}{stats['max_loss']:>+10,.1f} 円{Style.RESET_ALL}")
     print(f"  総利益             : {stats['gross_profit']:>10,.1f} 円")
     print(f"  総損失             : {stats['gross_loss']:>10,.1f} 円")
-    print(f"  プロフィットファクター : {pf_color}{pf_str}{Style.RESET_ALL}")
+    print(f"  プロフィットファクター : {pf_color}{_pf_str(pf)}{Style.RESET_ALL}")
+    print(f"  最大ドローダウン   : {Fore.RED}{stats['max_drawdown']:>+10,.1f} 円{Style.RESET_ALL}")
     print()
 
-    # 直近トレードテーブル（最大 10 件）
+    # 保有・決済内訳
+    avg_bars = stats["avg_hold_bars"]
+    print("  ── 保有・決済内訳 ──")
+    print(f"  平均保有本数       : {avg_bars:>6.1f} 本（≈ {avg_bars * 5:.0f} 分）")
+    print(f"  ストップロス決済   : {stats['sl_count']:>4} 回")
+    print(f"  テイクプロフィット決済 : {stats['tp_count']:>4} 回")
+    print(f"  シグナル決済       : {stats['signal_count']:>4} 回")
+    print(f"  強制決済（期末）   : {stats['forced_count']:>4} 回")
+    print()
+
+    # 直近 10 トレード
     recent = trades[-10:]
-    print(f"  ── 直近 {len(recent)} トレード（* = データ末尾での強制決済）──")
+    print(f"  ── 直近 {len(recent)} トレード（* = 期末強制決済）──")
     print(
         tabulate(
             _trade_rows(recent),
@@ -231,7 +316,6 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
     print()
 
     print(SEP)
-    print("  ※ スリッページ・手数料は含まれていません")
     print("  ※ 本結果は将来の利益を保証しません")
     print("  ※ 自動発注機能はありません（分析のみ）")
     print(SEP)
@@ -242,41 +326,60 @@ def print_summary(stats: dict, df: pd.DataFrame, trades: list) -> None:
 # ──────────────────────────────────────────────
 
 def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> None:
-    """全トレード一覧を含むバックテストレポートをテキストファイルに保存する。"""
-    SEP = "=" * 62
+    """全トレード一覧を含む詳細レポートをテキストファイルに保存する。"""
+    SEP   = "=" * 64
     lines = []
 
     lines += [
         SEP,
-        f"  バックテスト結果  [ {TICKER} / {BACKTEST_INTERVAL} ]",
+        f"  バックテスト結果 v1.5  [ {TICKER} / {BACKTEST_INTERVAL} ]",
         SEP,
         f"  取得期間   : {_period_str(df)}",
         f"  総バー数   : {len(df):,} 本",
+        "",
+        "  ── シミュレーション設定 ──",
+        f"  ストップロス          : {STOP_LOSS:>5} 円",
+        f"  テイクプロフィット    : {TAKE_PROFIT:>5} 円",
+        f"  スリッページ          : {SLIPPAGE:>5} 円/片道",
+        f"  取引コスト            : {TRANSACTION_COST:>5} 円/トレード",
+        f"  合計コスト（往復）    : {TOTAL_COST:>5} 円/トレード",
         "",
     ]
 
     if not stats:
         lines.append("  トレードなし（シグナルが発生しませんでした）")
     else:
-        pf_val = stats["profit_factor"]
-        pf_str = f"{pf_val:.2f}" if pf_val != float("inf") else "inf"
+        pf       = stats["profit_factor"]
+        avg_bars = stats["avg_hold_bars"]
 
         lines += [
+            "  ── 勝敗 ──",
             f"  総トレード数       : {stats['total_trades']:>4} 回",
             f"  勝ち               : {stats['wins']:>4} 回",
             f"  負け               : {stats['losses']:>4} 回",
             f"  引き分け           : {stats['draws']:>4} 回",
             f"  勝率               : {stats['win_rate']:>6.1f} %",
+            f"  最大連勝           : {stats['max_win_streak']:>4} 連勝",
+            f"  最大連敗           : {stats['max_loss_streak']:>4} 連敗",
             "",
+            "  ── 損益 ──",
             f"  合計損益           : {stats['total_pnl']:>+10,.1f} 円",
-            f"  平均損益 / トレード: {stats['avg_pnl']:>+10,.1f} 円",
+            f"  平均損益/トレード  : {stats['avg_pnl']:>+10,.1f} 円",
             f"  最大利益           : {stats['max_win']:>+10,.1f} 円",
             f"  最大損失           : {stats['max_loss']:>+10,.1f} 円",
             f"  総利益             : {stats['gross_profit']:>10,.1f} 円",
             f"  総損失             : {stats['gross_loss']:>10,.1f} 円",
-            f"  プロフィットファクター : {pf_str}",
+            f"  プロフィットファクター : {_pf_str(pf)}",
+            f"  最大ドローダウン   : {stats['max_drawdown']:>+10,.1f} 円",
             "",
-            "  ── 全トレード一覧（* = データ末尾での強制決済）──",
+            "  ── 保有・決済内訳 ──",
+            f"  平均保有本数       : {avg_bars:>6.1f} 本（≈ {avg_bars * 5:.0f} 分）",
+            f"  ストップロス決済   : {stats['sl_count']:>4} 回",
+            f"  テイクプロフィット決済 : {stats['tp_count']:>4} 回",
+            f"  シグナル決済       : {stats['signal_count']:>4} 回",
+            f"  強制決済（期末）   : {stats['forced_count']:>4} 回",
+            "",
+            "  ── 全トレード一覧（* = 期末強制決済）──",
             tabulate(
                 _trade_rows(trades),
                 headers=TRADE_HEADERS,
@@ -290,7 +393,6 @@ def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> N
     lines += [
         SEP,
         "  注意事項",
-        "  - スリッページ・手数料は含まれていません",
         "  - 本結果は将来の利益を保証しません",
         "  - 自動発注機能はありません（分析のみ）",
         SEP,
@@ -321,7 +423,6 @@ def main() -> None:
     trades = simulate_trades(df)
 
     stats = calc_stats(trades)
-
     print_summary(stats, df, trades)
     save_report(stats, df, trades, filepath=REPORT_FILE)
 
