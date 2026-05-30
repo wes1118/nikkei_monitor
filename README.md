@@ -197,6 +197,32 @@ python session_compare.py
 > `data_source.py` の `TICKER` を `"NIY=F"` に変更してから実行します。
 > `^N225` は日本市場時間のみのため、夜間セッションのデータが取得できません。
 
+### パラメーター最適化
+
+```bash
+python optimize.py
+```
+
+243 通りのパラメーター組み合わせを自動でバックテストし、最良設定を探します。
+`NIY=F` が利用可能であれば自動で選択します（実出来高・日中セッション）。
+プロフィットファクター → 最大ドローダウン → 合計損益の優先順でランク付けし、
+上位 20 件を `optimization_report.txt` に保存します。
+
+**最適化対象パラメーター:**
+
+| パラメーター | 候補値 | 組み合わせ数 |
+|---|---|---|
+| ストップロス | 100 / 150 / 200 円 | 3 |
+| テイクプロフィット | 200 / 300 / 400 円 | 3 |
+| 出来高倍率 (vol_mult) | 1.2 / 1.5 / 2.0 倍 | 3 |
+| ATR 最小値 (atr_min) | 20 / 30 / 40 円 | 3 |
+| EMA 窓サイズ | 10 / 20 / 30 本 | 3 |
+| **合計** | | **243 通り** |
+
+> **注意**: 過去データへの最適化です。将来の利益を保証しません。
+> 過学習（カーブフィッティング）のリスクに注意してください。
+> 最良パラメーターを盲目的に採用せず、別の期間でも検証することを推奨します。
+
 ---
 
 ## ファイル構成
@@ -214,12 +240,14 @@ nikkei_monitor/
 ├── ticker_compare.py          # ティッカー比較（先物 vs インデックス、実出来高 vs 合成出来高）
 ├── session_filter.py          # セッションフィルター定義（SESSION 設定・filter_session 関数）
 ├── session_compare.py         # セッション比較（全 / 日中 / 夜間の3セッションを比較）
+├── optimize.py                # パラメーター最適化（グリッドサーチ、243 通り、~1秒）
 ├── requirements.txt           # 依存パッケージ一覧
 ├── chart.png                  # 生成されたチャート（初回実行後に作成）
 ├── backtest_report.txt        # バックテスト結果（UTF-8 BOM付き）
 ├── strategy_comparison.txt    # 戦略比較結果（UTF-8 BOM付き）
 ├── ticker_comparison.txt      # ティッカー比較結果（UTF-8 BOM付き）
-└── session_comparison.txt     # セッション比較結果（UTF-8 BOM付き）
+├── session_comparison.txt     # セッション比較結果（UTF-8 BOM付き）
+└── optimization_report.txt    # パラメーター最適化レポート（UTF-8 BOM付き）
 ```
 
 ---
@@ -238,6 +266,7 @@ nikkei_monitor/
 | **v1.7** | 日本語対応強化 — チャートの日本語フォント自動検出・README 日本語化・レポートファイル BOM 対応 |
 | **v1.8** | データソース改善 — `TICKER_CANDIDATES`・`probe_tickers()`・実/合成出来高の自動判定・`ticker_compare.py` で先物 vs インデックス比較 |
 | **v1.9** | セッションフィルター — `session_filter.py` で日中 / 夜間 / 全セッション切替・`session_compare.py` で3セッション比較 |
+| **v1.10** | パラメーター最適化 — `optimize.py` で 243 通りのグリッドサーチ（~1秒）・PF 優先でランク付け・`optimization_report.txt` に上位 20 件を保存 |
 
 ---
 
