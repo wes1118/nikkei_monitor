@@ -13,7 +13,7 @@ from tabulate import tabulate
 import colorama
 from colorama import Fore, Style
 
-from data_source import fetch_ohlcv
+from data_source import fetch_ohlcv, TICKER
 from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd, calculate_ema, calculate_atr
 from strategy import generate_signals
 from chart import save_chart
@@ -43,8 +43,11 @@ def display_results(df: pd.DataFrame) -> None:
         f"{df['datetime'].iloc[0].strftime('%Y-%m-%d %H:%M')}"
         f" 〜 {df['datetime'].iloc[-1].strftime('%H:%M')} JST"
     )
+    vol_label = df.attrs.get("volume_label", "不明")
+    ticker_id = df.attrs.get("ticker", TICKER)
     print("\n" + "=" * 72)
     print("  日経225mini 監視システム  【Yahoo Finance データ / 発注機能なし】")
+    print(f"  ティッカー: {ticker_id}  /  出来高: {vol_label}")
     print(f"  期間: {date_range}")
     print("=" * 72)
 
@@ -100,7 +103,7 @@ def display_results(df: pd.DataFrame) -> None:
 
 def main() -> None:
     print("市場データを取得中...")
-    df = fetch_ohlcv()
+    df = fetch_ohlcv(ticker=TICKER)
 
     print("インジケーターを計算中...")
     df = calculate_vwap(df)

@@ -12,7 +12,7 @@ from tabulate import tabulate
 import colorama
 from colorama import Fore, Style
 
-from data_source import fetch_ohlcv
+from data_source import fetch_ohlcv, TICKER   # TICKER は data_source.py で一元管理
 from indicators import calculate_vwap, calculate_volume_avg, calculate_cvd, calculate_ema, calculate_atr
 from strategy import generate_signals
 
@@ -22,7 +22,7 @@ colorama.init()
 # 設定
 # ──────────────────────────────────────────────
 
-TICKER            = "^N225"
+# TICKER は data_source.py で設定（ここでは再定義しない）
 BACKTEST_PERIOD   = "60d"    # yfinance の 5 分足は最大 60 日まで無料取得可能
 BACKTEST_INTERVAL = "5m"
 VOL_WINDOW        = 5
@@ -424,9 +424,10 @@ def save_report(stats: dict, df: pd.DataFrame, trades: list, filepath: str) -> N
 def main() -> None:
     print("バックテスト用データを取得中...")
     df_raw = fetch_ohlcv(
+        ticker=TICKER,
         period=BACKTEST_PERIOD,
         interval=BACKTEST_INTERVAL,
-        limit=0,   # 全件取得（件数制限なし）
+        limit=0,
     )
 
     print("インジケーターとシグナルを計算中（日次 VWAP / CVD リセット）...")
